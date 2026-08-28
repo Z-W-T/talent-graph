@@ -1,0 +1,7 @@
+data
+talent-graph/backend/data
+.vscode
+__pycache__
+talent-graph/backend/tests
+talent-graph/backend/.env
+talent-graph/frontend/node_modules

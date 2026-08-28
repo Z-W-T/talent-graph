@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智慧引才图谱 · 整体系统架构</title>
+<style>
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f5f7fa; margin: 0; padding: 32px; color: #2c2c2a; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+  .sub { color: #888780; font-size: 13px; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #e5e3dc; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  h2 { font-size: 15px; font-weight: 500; margin: 0 0 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td, th { border: 1px solid #e5e3dc; padding: 8px 12px; text-align: left; }
+  th { background: #f1efe8; font-weight: 500; }
+  .blue { color: #185FA5; } .teal { color: #0F6E56; }
+  svg text { font-family: inherit; }
+  .th { font-size: 14px; font-weight: 500; }
+  .ts { font-size: 12px; fill: #5F5E5A; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>智慧引才图谱 · 整体系统架构（一期 MVP）</h1>
+  <div class="sub">单体优先 · AI 全内网化 · 演示主线：上传 → 解析 → 匹配 → 推送 → 导出</div>
+
+  <div class="card">
+    <svg viewBox="0 0 680 416" width="100%" role="img">
+      <title>智慧引才图谱整体架构</title>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <g>
+        <rect x="40" y="40" width="600" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+        <text class="th" x="340" y="60" text-anchor="middle" dominant-baseline="central">用户浏览器 · React 18 + TypeScript + Ant Design 5</text>
+        <text class="ts" x="340" y="78" text-anchor="middle" dominant-baseline="central">简历上传解析 / 岗位需求录入 / 匹配结果与理由 / 简历库检索</text>
+      </g>
+      <line x1="340" y1="96" x2="340" y2="114" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <g>
+        <rect x="240" y="116" width="200" height="44" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+        <text class="th" x="340" y="138" text-anchor="middle" dominant-baseline="central">Nginx 反向代理（内网）</text>
+      </g>
+      <line x1="340" y1="160" x2="340" y2="178" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <g>
+        <rect x="40" y="180" width="600" height="44" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+        <text class="th" x="340" y="202" text-anchor="middle" dominant-baseline="central">FastAPI 单体后端 · BackgroundTasks 异步 · 自动 API 文档</text>
+      </g>
+      <line x1="340" y1="224" x2="340" y2="242" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <g>
+        <rect x="40" y="244" width="140" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+        <text class="th" x="110" y="264" text-anchor="middle" dominant-baseline="central">简历解析</text>
+        <text class="ts" x="110" y="282" text-anchor="middle" dominant-baseline="central">PyMuPDF·docx·OCR</text>
+      </g>
+      <g>
+        <rect x="190" y="244" width="140" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+        <text class="th" x="260" y="264" text-anchor="middle" dominant-baseline="central">两级匹配引擎</text>
+        <text class="ts" x="260" y="282" text-anchor="middle" dominant-baseline="central">硬过滤→粗排→精排</text>
+      </g>
+      <g>
+        <rect x="340" y="244" width="140" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+        <text class="th" x="410" y="264" text-anchor="middle" dominant-baseline="central">LLM 客户端</text>
+        <text class="ts" x="410" y="282" text-anchor="middle" dominant-baseline="central">重试·指数退避</text>
+      </g>
+      <g>
+        <rect x="490" y="244" width="150" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+        <text class="th" x="565" y="264" text-anchor="middle" dominant-baseline="central">Excel 导出</text>
+        <text class="ts" x="565" y="282" text-anchor="middle" dominant-baseline="central">openpyxl 名单</text>
+      </g>
+      <line x1="110" y1="300" x2="110" y2="318" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="260" y1="300" x2="260" y2="318" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="410" y1="300" x2="410" y2="318" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="565" y1="300" x2="565" y2="318" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <g>
+        <rect x="40" y="320" width="140" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+        <text class="th" x="110" y="340" text-anchor="middle" dominant-baseline="central">PostgreSQL 16</text>
+        <text class="ts" x="110" y="358" text-anchor="middle" dominant-baseline="central">pgvector 向量检索</text>
+      </g>
+      <g>
+        <rect x="190" y="320" width="140" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+        <text class="th" x="260" y="340" text-anchor="middle" dominant-baseline="central">本地磁盘 / MinIO</text>
+        <text class="ts" x="260" y="358" text-anchor="middle" dominant-baseline="central">简历原件存储</text>
+      </g>
+      <g>
+        <rect x="340" y="320" width="140" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+        <text class="th" x="410" y="340" text-anchor="middle" dominant-baseline="central">内部大模型平台</text>
+        <text class="ts" x="410" y="358" text-anchor="middle" dominant-baseline="central">内网 API · OpenAI 兼容</text>
+      </g>
+      <g>
+        <rect x="490" y="320" width="150" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+        <text class="th" x="565" y="340" text-anchor="middle" dominant-baseline="central">BGE-M3 · PaddleOCR</text>
+        <text class="ts" x="565" y="358" text-anchor="middle" dominant-baseline="central">本地 GPU（兜底可选）</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="card">
+    <h2>数据流（演示主线）</h2>
+    <table>
+      <tr><th>步骤</th><th>说明</th><th>关键模块</th></tr>
+      <tr><td>1. 上传解析</td><td>批量上传 PDF/Word/图片 → 文本提取（扫描件走 OCR）→ LLM 结构化抽取（带置信度）→ 生成向量入库</td><td class="blue">parser · llm · embedding</td></tr>
+      <tr><td>2. 岗位结构化</td><td>对话式自然语言需求 → LLM 拆成硬性条件（学历/专业/年龄）+ 择优条件（方向/技能/履历/意愿）</td><td class="blue">llm</td></tr>
+      <tr><td>3. 两级匹配</td><td>第一级硬性过滤（规则，绝不误杀）→ 第二级向量粗排 Top30 → LLM 精排 Top10 并逐条生成理由</td><td class="blue">matching · pgvector · llm</td></tr>
+      <tr><td>4. 推送与反馈</td><td>HR 复核精选后推送（简历状态→已推送）→ 单位一键反馈（被选中/未选中回退在库）</td><td class="blue">match 路由 · 状态机</td></tr>
+      <tr><td>5. 导出</td><td>精选名单导出 Excel（含分数、向量相似度、匹配理由）</td><td class="blue">exporter</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>边界与降级设计</h2>
+    <table>
+      <tr><th>设计</th><th>说明</th></tr>
+      <tr><td class="teal">AI 全内网化</td><td>LLM 走内部平台内网 API；Embedding 优先平台接口、缺失时本地 BGE-M3；OCR 本地 PaddleOCR；全程不出内网</td></tr>
+      <tr><td class="teal">稳定性兜底</td><td>LLM 调用失败重试 3 次 + 指数退避；平台不支持 JSON 模式时自动降级；抽取带置信度、低置信字段人工修正后入库</td></tr>
+      <tr><td class="teal">SQLite 演示模式</td><td>DATABASE_URL=sqlite:///... 时无需 PostgreSQL 即可跑通全流程（向量检索退化为 Python 计算），便于本机快速演示</td></tr>
+      <tr><td class="teal">人机边界</td><td>AI 只做初筛与排序；最终推荐由 HR 复核精选，AI 不直接对外发送任何结果</td></tr>
+    </table>
+  </div>
+</div>
+</body>
+</html>

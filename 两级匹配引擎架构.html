@@ -1,0 +1,38 @@
+<svg viewBox="0 0 680 420" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>两级匹配引擎架构</title>
+<desc>简历先经过硬性条件规则过滤，再经择优条件语义打分排序，输出带理由的候选名单</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<text x="40" y="30" font-size="14" font-weight="500" fill="#26215C">岗位需求（结构化）</text>
+<rect x="40" y="40" width="600" height="52" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="60" y="60" font-size="13" fill="#26215C">硬性条件：学历 / 专业 / 年龄</text>
+<text x="60" y="80" font-size="13" fill="#534AB7">择优条件：研究方向 / 技能 / 履历 / 个人意愿</text>
+
+<text x="40" y="128" font-size="14" font-weight="500" fill="#26215C">第一级 · 硬性过滤（确定性规则）</text>
+<rect x="40" y="138" width="600" height="52" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="60" y="158" font-size="13" fill="#0C447C">规则引擎逐条校验，不满足直接排除 · 透明可审计、不误杀</text>
+<text x="60" y="178" font-size="12" fill="#185FA5">学历、专业大类、年龄界限 — 用岗位清单字段精确比对</text>
+
+<line x1="340" y1="190" x2="340" y2="206" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<text x="40" y="222" font-size="14" font-weight="500" fill="#26215C">第二级 · 择优排序（语义打分）</text>
+<rect x="40" y="232" width="600" height="52" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="60" y="252" font-size="13" fill="#04342C">向量检索 + 模型对非结构化履历做语义匹配度打分</text>
+<text x="60" y="272" font-size="12" fill="#0F6E56">研究方向、技能、履历、意愿 — 输出 Top N + 逐条匹配理由</text>
+
+<line x1="340" y1="284" x2="340" y2="300" stroke="#5F5E5A" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="40" y="304" width="290" height="56" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="185" y="326" font-size="13" font-weight="500" fill="#412402" text-anchor="middle" dominant-baseline="central">候选名单（Top N）</text>
+<text x="185" y="345" font-size="12" fill="#854F0B" text-anchor="middle" dominant-baseline="central">每名候选人附匹配理由</text>
+
+<rect x="350" y="304" width="290" height="56" rx="10" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="495" y="326" font-size="13" font-weight="500" fill="#501313" text-anchor="middle" dominant-baseline="central">人工复核精选</text>
+<text x="495" y="345" font-size="12" fill="#A32D2D" text-anchor="middle" dominant-baseline="central">人才飞地 HR 确认后才推送</text>
+
+<text x="340" y="388" font-size="12" fill="#5F5E5A" text-anchor="middle">两级解耦：硬性用规则保准确，择优用语义保相关，全程可解释</text>
+</svg>
