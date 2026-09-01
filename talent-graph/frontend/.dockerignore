@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.gitignore
+*.log
+*.tsbuildinfo
+Dockerfile
+.dockerignore
+.npmrc
+# 调试/测试产生的临时目录，务必排除（避免符号链接导致 build context 报错）
+_citest
+_npmtest
+_npmtest2
+_proxytest
+_t2

@@ -1,6 +1,6 @@
 data
 talent-graph/backend/data
-.vscode
+.vscodey
 __pycache__
 talent-graph/backend/tests
 talent-graph/backend/.env
