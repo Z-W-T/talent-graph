@@ -3,6 +3,9 @@
 两种实现输出维度必须一致（默认 1024），与 resumes/job_requests 表的 Vector 列对齐。
 """
 from __future__ import annotations
+# 本地运行时下载模型需要设置镜像
+# import os
+# os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 import logging
 
@@ -83,6 +86,7 @@ def resume_to_text(structured: dict, raw_text: str) -> str:
         _achievements_to_text(structured.get("achievements")),
         _intention_to_text(structured),
         str(structured.get("major") or ""),
+        str(structured.get("school") or ""),
         raw_text[:500],
     ]
     return "\n".join(p for p in parts if p)

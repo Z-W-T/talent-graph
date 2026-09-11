@@ -1,11 +1,13 @@
-import { Button, Card, Checkbox, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
-import { useEffect, useState } from "react";
-import { STATUS_MAP, displayName, resumeApi, type Resume } from "../api/client";
+import { BankOutlined, ReadOutlined } from "@ant-design/icons";
+import { Button, Card, Checkbox, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tag, Typography, message } from "antd";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { STATUS_MAP, displayName, resumeApi, type Resume, type ResumeFilters, type ResumeStats } from "../api/client";
+import PieChart from "../components/PieChart";
 
 const STATUS_OPTIONS = Object.entries(STATUS_MAP).map(([value, v]) => ({ value, label: v.label }));
-const SCALAR_EDIT_FIELDS = ["name", "education", "major", "age", "phone", "email", "research", "intention"];
+const SCALAR_EDIT_FIELDS = ["name", "education", "school", "major", "age", "phone", "email", "research", "intention"];
 const FIELD_LABELS: Record<string, string> = {
-  name: "姓名", education: "学历", major: "专业", age: "年龄",
+  name: "姓名", education: "学历", school: "毕业院校", major: "专业", age: "年龄",
   phone: "电话", email: "邮箱", research: "研究方向", intention: "个人意愿概述",
   work_history: "工作履历摘要", work_experiences: "工作经历", achievements: "科研成果",
 };
@@ -48,21 +50,62 @@ const groupAchievements = (rows: { type?: string; detail?: string }[] = []): Rec
 
 export default function ResumeLibraryPage() {
   const [resumes, setResumes] = useState<Resume[]>([]);
+  const [stats, setStats] = useState<ResumeStats>();
+  // ---- 筛选条件 ----
+  const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<string>();
   const [lowConfOnly, setLowConfOnly] = useState(false);
+  const [education, setEducation] = useState<string>();
+  const [majorsFilter, setMajorsFilter] = useState<string[]>([]);
+  const [schoolInput, setSchoolInput] = useState("");
+  const [schoolFilter, setSchoolFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<string>();
+  const [ageMin, setAgeMin] = useState<number>();
+  const [ageMax, setAgeMax] = useState<number>();
   const [editing, setEditing] = useState<Resume>();
   const [form] = Form.useForm();
 
-  const refresh = () =>
-    resumeApi
-      .list({ keyword, status, low_confidence_only: lowConfOnly })
-      .then((r) => setResumes(r.data));
+  /** 列表与看板共用同一套筛选条件（后端同口径过滤，保证数字与表格一致） */
+  const filters: ResumeFilters = useMemo(
+    () => ({
+      keyword,
+      status,
+      low_confidence_only: lowConfOnly,
+      education,
+      major: majorsFilter.join(","),
+      school: schoolFilter,
+      source: sourceFilter,
+      age_min: ageMin,
+      age_max: ageMax,
+    }),
+    [keyword, status, lowConfOnly, education, majorsFilter, schoolFilter, sourceFilter, ageMin, ageMax]
+  );
+
+  const refresh = useCallback(() => {
+    resumeApi.list({ ...filters, limit: 500 }).then((r) => setResumes(r.data));
+    resumeApi.stats(filters).then((r) => setStats(r.data));
+  }, [filters]);
+
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 8000); // 轮询，解析完成后自动刷新状态
+    const t = setInterval(refresh, 8000); // 轮询，解析完成后自动刷新状态与看板
     return () => clearInterval(t);
-  }, [status, lowConfOnly]);
+  }, [refresh]);
+
+  const resetFilters = () => {
+    setKeywordInput("");
+    setKeyword("");
+    setStatus(undefined);
+    setLowConfOnly(false);
+    setEducation(undefined);
+    setMajorsFilter([]);
+    setSchoolInput("");
+    setSchoolFilter("");
+    setSourceFilter(undefined);
+    setAgeMin(undefined);
+    setAgeMax(undefined);
+  };
 
   const openEdit = (r: Resume) => {
     setEditing(r);
@@ -130,6 +173,12 @@ export default function ResumeLibraryPage() {
   const columns = [
     { title: "姓名", width: 100, render: (_: unknown, r: Resume) => displayName(r) },
     { title: "学历", width: 80, render: (_: unknown, r: Resume) => r.structured?.education || "-" },
+    {
+      title: "毕业院校",
+      width: 170,
+      ellipsis: true,
+      render: (_: unknown, r: Resume) => r.structured?.school || "-",
+    },
     { title: "专业", width: 150, render: (_: unknown, r: Resume) => r.structured?.major || "-" },
     {
       title: "年龄",
@@ -197,26 +246,66 @@ export default function ResumeLibraryPage() {
     },
   ];
 
+  // ---- 筛选项候选值（取自全库，避免选中一个条件后其他选项消失） ----
+  const toOptions = (values?: string[]) => (values || []).map((v) => ({ value: v, label: v }));
+
   return (
     <Card title="简历库检索与标签管理">
-      <Space style={{ marginBottom: 16 }} wrap>
+      <Space style={{ marginBottom: 16 }} wrap size={8}>
         <Input.Search
-          placeholder="姓名 / 专业 / 研究方向 / 技能"
-          style={{ width: 280 }}
-          onSearch={(v) => {
-            setKeyword(v);
-            resumeApi.list({ keyword: v, status, low_confidence_only: lowConfOnly }).then((r) => setResumes(r.data));
+          placeholder="姓名 / 专业 / 毕业院校 / 研究方向 / 技能"
+          style={{ width: 260 }}
+          value={keywordInput}
+          onChange={(e) => {
+            setKeywordInput(e.target.value);
+            if (!e.target.value) setKeyword(""); // 清空时立即恢复全量
           }}
+          onSearch={(v) => setKeyword(v.trim())}
           allowClear
         />
-        <Select placeholder="状态" allowClear style={{ width: 130 }} options={STATUS_OPTIONS}
+        <Select placeholder="状态" allowClear style={{ width: 120 }} options={STATUS_OPTIONS}
           value={status} onChange={setStatus} />
+        <Select placeholder="学历" allowClear showSearch style={{ width: 120 }}
+          options={toOptions(stats?.filters.educations)} value={education} onChange={setEducation} />
+        <Select placeholder="专业（可多选）" mode="multiple" allowClear showSearch
+          maxTagCount="responsive" optionFilterProp="label" style={{ minWidth: 200 }}
+          options={toOptions(stats?.filters.majors)} value={majorsFilter} onChange={setMajorsFilter} />
+        <Input.Search placeholder="毕业院校关键词" style={{ width: 180 }} allowClear
+          value={schoolInput}
+          onChange={(e) => {
+            setSchoolInput(e.target.value);
+            if (!e.target.value) setSchoolFilter("");
+          }}
+          onSearch={(v) => setSchoolFilter(v.trim())} />
+        <Select placeholder="渠道" allowClear style={{ width: 120 }}
+          options={toOptions(stats?.filters.sources)} value={sourceFilter} onChange={setSourceFilter} />
+        <Space size={4}>
+          <InputNumber placeholder="年龄 ≥" style={{ width: 92 }} min={16} max={80}
+            value={ageMin} onChange={(v) => setAgeMin(v ?? undefined)} />
+          <span style={{ color: "#999" }}>~</span>
+          <InputNumber placeholder="年龄 ≤" style={{ width: 92 }} min={16} max={80}
+            value={ageMax} onChange={(v) => setAgeMax(v ?? undefined)} />
+        </Space>
         <Checkbox checked={lowConfOnly} onChange={(e) => setLowConfOnly(e.target.checked)}>
           只看待修正
         </Checkbox>
         <Button onClick={refresh}>刷新</Button>
-        <span style={{ color: "#999" }}>共 {resumes.length} 份</span>
+        <Button type="link" onClick={resetFilters}>重置筛选</Button>
+        <span style={{ color: "#999" }}>共 {stats?.total ?? resumes.length} 份</span>
       </Space>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={12}>
+          <Card size="small" title={<Space><BankOutlined />按学校分布</Space>}>
+            <PieChart data={stats?.by_school || []} centerLabel="简历数" />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card size="small" title={<Space><ReadOutlined />按专业分布</Space>}>
+            <PieChart data={stats?.by_major || []} centerLabel="简历数" />
+          </Card>
+        </Col>
+      </Row>
 
       <Table
         rowKey="id"
