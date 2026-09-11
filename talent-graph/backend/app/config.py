@@ -5,8 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # 数据库（PostgreSQL + pgvector）
+    # 数据库：PostgreSQL 16 + pgvector（docker-compose 已编排 PG 服务）
     database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/talent_graph"
+    # docker-compose 内部访问：postgresql+psycopg2://postgres:postgres@db:5432/talent_graph
 
     # 内部大模型平台（内网 API，默认按 OpenAI 兼容协议对接）
     llm_base_url: str = "http://internal-llm-platform.local/v1"
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
     # 匹配参数
     match_vector_top_k: int = 30      # 向量粗排取 Top K，再交 LLM 精排
     match_final_top_n: int = 10       # 最终输出候选人数量
+    match_resume_job_top_k: int = 10  # 简历侧上传后，只对向量最相关的 K 个在招岗位做 LLM 精排
 
 
 settings = Settings()

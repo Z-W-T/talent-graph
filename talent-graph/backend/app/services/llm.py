@@ -78,6 +78,7 @@ RESUME_EXTRACT_PROMPT = """你是简历信息抽取专家。请从以下简历�
 {
   "name": "姓名",
   "education": "最高学历（博士/硕士/本科/其他）",
+  "school": "毕业院校（最高学历对应的学校全称，如 华中科技大学；原文未提及填 null）",
   "major": "专业",
   "birth_date": "出生年月，原文照抄（如 1983年6月 / 1983-06-23），仅供后端推算年龄，未知填 null",
   "age": 年龄（数字；若原文只有出生年月，请按当前日期推算；未知填 null）,
@@ -102,14 +103,15 @@ RESUME_EXTRACT_PROMPT = """你是简历信息抽取专家。请从以下简历�
     "status": "当前工作状态（在职 / 离职 / 应届 / 博士后出站等），未知填 null",
     "reason": "跳槽原因/求职动机，未知填 null"
   },
-  "confidence": {"work_experiences": 0.0~1.0, "research": 0.0~1.0, "achievements": 0.0~1.0, "skills": 0.0~1.0, "intention": 0.0~1.0}
+  "confidence": {"education": 0.0~1.0, "school": 0.0~1.0, "major": 0.0~1.0, "work_experiences": 0.0~1.0, "research": 0.0~1.0, "achievements": 0.0~1.0, "skills": 0.0~1.0, "intention": 0.0~1.0}
 }
 要求：
 1. 只返回 JSON，不要任何其他内容。无法确定的字段填 null 或空数组，并给低置信度。
 2. 工作经历（work_experiences）必须逐段提取，按时间倒序，不要合并成一段文字。
 3. 科研成果（achievements）中简历未提及的类别返回空数组，不要编造。
 4. 姓名，专业，学历，年龄四个元素一定存在，请确保准确提取了这四项信息。
-5. intention_detail 四个子项必须分别从原文独立判断，不要把整段话塞进同一个子项。"""
+5. intention_detail 四个子项必须分别从原文独立判断，不要把整段话塞进同一个子项。
+6. school（毕业院校）从教育经历/学历信息中提取最高学历对应的院校全称；原文确实没有出现院校信息时填 null，不要编造。"""
 
 JOB_STRUCTURE_PROMPT = """你是招聘需求分析专家。请将以下岗位需求描述结构化为 JSON：
 {

@@ -15,7 +15,7 @@
 | Embedding | 内部平台接口（优先）或本地 BGE-M3 |
 | OCR | PaddleOCR（扫描件/图片简历） |
 | 文档解析 | PyMuPDF（PDF）+ python-docx（Word） |
-| 导出 | openpyxl |
+| 导出 | openpyxl + zipfile |
 
 > 按选型说明的 MVP 裁剪：用 FastAPI BackgroundTasks 代替 Celery+Redis；原件存本地磁盘；单用户无登录。
 
@@ -32,15 +32,15 @@ talent-graph/
 │       ├── main.py             # FastAPI 入口
 │       ├── config.py           # 环境变量配置
 │       ├── database.py         # 连接 + 建表（pgvector 扩展）
-│       ├── models.py           # resumes / job_requests / match_records
+│       ├── models.py           # resumes / job_requests / match_results / departments
 │       ├── schemas.py
 │       ├── routers/            # resumes / jobs / match 三组 API
 │       └── services/
 │           ├── parser.py       # PDF/Word/图片文本提取（扫描件走 OCR）
 │           ├── llm.py          # 内部平台客户端 + 结构化抽取 + 匹配理由
 │           ├── embedding.py    # 平台接口或本地 BGE-M3
-│           ├── matching.py     # 两级匹配引擎（硬过滤→向量粗排→LLM 精排）
-│           └── exporter.py     # Excel 名单导出
+│           ├── matching.py     # 两级匹配引擎（硬过滤→向量粗排→LLM 精排）+ 结果落库 match_results
+│           └── exporter.py     # Excel 名单导出 / 名单+简历原件 ZIP 打包
 └── frontend/
     ├── Dockerfile / nginx.conf
     └── src/
@@ -70,8 +70,10 @@ docker compose up -d db
 # 后端
 cd backend
 pip install -r requirements.txt
-cp .env.example .env    # DATABASE_URL 改为 localhost
+cp .env.example .env    # DATABASE_URL db 改为 localhost
 uvicorn app.main:app --reload --port 8000
+# 如果unicorn指令无法识别 可以使用下列指令
+python -m uvicorn app.main:app --reload --port 8000
 
 # 前端
 cd frontend
@@ -83,8 +85,8 @@ npm run dev             # http://localhost:5173，已配置 /api 代理
 
 1. **简历上传解析**：批量上传 PDF/Word/图片 → 后台解析 → 低置信字段高亮；
 2. **简历库检索**：人工修正低置信字段（保存后自动重新生成向量）；
-3. **岗位需求录入**：粘贴与业务部门的对话访谈内容 → LLM 结构化为硬性/择优条件；
-4. **匹配结果**：选岗位 → 执行匹配 → 查看 Top 10 候选与逐条理由（可点开简历原文溯源）→ 勾选精选 → 推送 → 导出 Excel。
+3. **岗位需求录入**：多层级级联选择需求部门，填写省份/专业，粘贴与业务部门的对话访谈内容 → LLM 结构化为硬性/择优条件；支持下载 Excel 模板「批量导入」（`GET /api/jobs/import/template` / `POST /api/jobs/import`），已录入岗位按省份分布看板展示；
+4. **匹配结果**：简历上传解析完成、岗位新建/导入时即自动跑两级匹配并写入 `match_results` 表；匹配页选岗位即秒出结果（只查该表，不重算）→ 查看 Top 候选与逐条理由（可点开简历原文溯源）→ 勾选精选 → 推送 → 导出（名单+简历原件 ZIP 或仅 Excel）。需要刷新时点「重新匹配」手动重跑并覆盖结果。
 
 ## 对接内部平台前需确认（选型说明遗留 4 问）
 
@@ -99,6 +101,40 @@ npm run dev             # http://localhost:5173，已配置 /api 代理
 
 - `POST /api/match/feedback` 反馈回流接口已实现（匹配页有模拟回填按钮）；
 - Celery+Redis 异步队列、MinIO、SSO 登录按选型说明二期接入。
+
+## 匹配结果表（match_results）
+
+匹配结果不再每次实时计算，统一落库到 `match_results`（`job_id + resume_id` 唯一）：
+
+| 触发时机 | 入口 | `match_source` |
+| --- | --- | --- |
+| 简历上传解析完成 / 重新解析 | `resumes._process_resume` | `resume_upload` |
+| 简历人工修正字段 | `resumes.update_resume`（后台） | `resume_upload` |
+| 岗位新建 / Excel 导入 | `jobs._match_job_task`（后台） | `job_create` |
+| 匹配页「重新匹配」 | `POST /api/match/run/{job_id}` | `manual` |
+
+- 简历侧：先对该简历 × 全部「招聘中」岗位做硬性过滤，再按向量相似度取最相关
+  `MATCH_RESUME_JOB_TOP_K`（默认 10）个岗位交 LLM 精排，避免岗位多时无谓的大模型调用。
+- 岗位侧：硬性过滤 → 向量粗排 `MATCH_VECTOR_TOP_K` → LLM 精排 `MATCH_FINAL_TOP_N`，与原有策略一致。
+- 写入为幂等 upsert：重跑只刷新分数/理由/来源/简历路径，**保留 `push_status`**（已推送/有意向/无意向不被覆盖）。
+- `resume_path`：匹配时把简历原件的完整路径快照进表，导出打包时直接用它定位文件
+  （旧记录该列为空时自动回退到 `resumes.file_path`）。
+- 查询接口只读该表：`GET /api/match/{job_id}`（按岗位）、`GET /api/match/resume/{resume_id}`（按简历）。
+- 单条 LLM 精排失败不影响整批（记 0 分并写明失败原因），匹配失败也不会把简历误标为「解析失败」。
+- 旧库中的 `match_records` 表已废弃（模型中的 `MatchRecord` 已由 `MatchResult` 取代），
+  不影响运行，确认无用后可手动 `DROP TABLE match_records;` 清理。
+
+## 导出（名单 / 名单+简历）
+
+| 接口 | 内容 |
+| --- | --- |
+| `GET /api/match/{job_id}/export`（默认） | ZIP：`候选名单_岗位_时间.xlsx` + `简历原件/姓名_专业.pdf` 等原件 |
+| `GET /api/match/{job_id}/export?with_files=false` | 仅候选名单 xlsx |
+
+- 名单新增「简历文件」列，写明打包内的相对路径；原件已丢失/被手工删除的记录标注「（原件缺失）」，
+  打包时自动跳过（后端打 WARNING 日志），不影响其余文件。
+- ZIP 内简历文件名统一为「姓名_专业.原后缀」，同名自动加序号；文件名与 ZIP 内条目都会过滤
+  `/ : * ? " < > |` 等非法字符，避免解压出多余目录或保存失败。
 
 ## 联调测试（已通过 20/20）
 
@@ -125,6 +161,9 @@ python tests/smoke_test.py
 
 SQLite 演示模式说明：`DATABASE_URL=sqlite:///...` 时无需 PG/pgvector，embedding 以 JSON 存储、
 向量粗排退化为 Python 余弦计算；切回 PostgreSQL 后自动使用 pgvector SQL 检索。
+
+> 「需求部门」多层级级联的组织树在后端 `backend/app/services/departments.py` 统一维护
+> （前端经 `GET /api/jobs/departments` 异步加载），请按实际组织架构替换 `DEPARTMENT_TREE`。
 
 ## 已验证记录（2026-08-21）
 

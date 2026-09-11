@@ -17,6 +17,9 @@ export interface Job {
   id: number;
   title: string;
   department: string;
+  department_path?: string[];
+  province: string;
+  majors: string[];
   raw_text: string;
   hard_conditions: Record<string, any>;
   soft_conditions: Record<string, any>;
@@ -24,7 +27,66 @@ export interface Job {
   created_at: string;
 }
 
-export interface MatchRecord {
+/** 组织架构节点（需求部门多层级级联） */
+export interface DepartmentNode {
+  id?: number;
+  label: string;
+  value: string;
+  /** 节点自身省份（空串 = 继承上级） */
+  province?: string;
+  /** 节点生效省份（已按祖先链推导，直接展示用） */
+  effect_province?: string;
+  children?: DepartmentNode[];
+}
+
+/** 部门 Excel 批量导入结果 */
+export interface DepartmentImportResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  errors: { row: number; message: string }[];
+}
+
+/** Excel 批量导入结果 */
+export interface JobImportResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  errors: { row: number; message: string }[];
+}
+
+/** 导入会话中的一行（预校验后的原始数据） */
+export interface JobImportItem {
+  row: number;
+  title: string;
+  department: string;
+  province: string;
+  majors: string[];
+  raw_text: string;
+  /** 预校验发现的问题（空 = 可导入） */
+  error: string;
+}
+
+/** 上传解析后的导入会话：前端据此渲染进度条与异常清单 */
+export interface JobImportSession {
+  token: string;
+  total: number;
+  valid: number;
+  invalid: number;
+  items: JobImportItem[];
+}
+
+/** 单行导入结果（进度条每推进一步返回一条） */
+export interface JobImportStep {
+  row: number;
+  title: string;
+  ok: boolean;
+  job_id?: number;
+  error: string;
+}
+
+/** 匹配结果表（match_results）的一行：简历 × 岗位的预计算匹配结果 */
+export interface MatchResult {
   id: number;
   job_id: number;
   resume_id: number;
@@ -32,8 +94,46 @@ export interface MatchRecord {
   vector_score: number;
   score: number;
   reason: string;
+  /** 触发来源：resume_upload（简历上传）/ job_create（岗位新建）/ manual（手动重跑） */
+  match_source: string;
   push_status: string;
   created_at: string;
+  updated_at?: string;
+}
+
+/** 简历库检索条件（列表与看板共用同一套条件，保证两者口径一致） */
+export interface ResumeFilters {
+  keyword?: string;
+  status?: string;
+  low_confidence_only?: boolean;
+  /** 学历（博士/硕士/本科，包含匹配） */
+  education?: string;
+  /** 专业，多个用逗号分隔（任一命中即可） */
+  major?: string;
+  /** 毕业院校关键词 */
+  school?: string;
+  /** 渠道 */
+  source?: string;
+  age_min?: number;
+  age_max?: number;
+}
+
+/** 饼图数据项（与 PieChart 组件同结构） */
+export interface DistributionItem {
+  name: string;
+  value: number;
+}
+
+/** 简历库看板：学校/专业分布 + 筛选项候选值（候选值取自全库） */
+export interface ResumeStats {
+  total: number;
+  by_school: DistributionItem[];
+  by_major: DistributionItem[];
+  filters: {
+    educations: string[];
+    majors: string[];
+    sources: string[];
+  };
 }
 
 // ---------- 状态标签 ----------
@@ -56,8 +156,10 @@ export const resumeApi = {
     fd.append("files", file);
     return api.post<Resume[]>(`/resumes/upload?source=${encodeURIComponent(source)}`, fd);
   },
-  list: (params: { keyword?: string; status?: string; low_confidence_only?: boolean; limit?: number }) =>
+  list: (params: ResumeFilters & { limit?: number }) =>
     api.get<Resume[]>("/resumes", { params }),
+  /** 简历库看板：按同一套筛选条件聚合学校/专业分布（不受列表 limit 截断影响） */
+  stats: (params: ResumeFilters) => api.get<ResumeStats>("/resumes/stats", { params }),
   update: (id: number, body: Partial<Pick<Resume, "structured" | "status" | "source">>) =>
     api.patch<Resume>(`/resumes/${id}`, body),
   raw: (id: number) => api.get<{ raw_text: string }>(`/resumes/${id}/raw`),
@@ -66,18 +168,69 @@ export const resumeApi = {
 };
 
 export const jobApi = {
-  create: (body: { title: string; department: string; raw_text: string }) =>
-    api.post<Job>("/jobs", body),
+  create: (body: {
+    title: string;
+    department: string;
+    department_path?: string[];
+    province?: string;
+    majors?: string[];
+    raw_text: string;
+  }) => api.post<Job>("/jobs", body),
   list: () => api.get<Job[]>("/jobs"),
   remove: (id: number) => api.delete(`/jobs/${id}`),
+  /** 组织架构树（需求部门多层级级联） */
+  departments: () => api.get<DepartmentNode[]>("/jobs/departments"),
+  /** 标准 Excel 导入模板下载地址 */
+  importTemplateUrl: "/api/jobs/import/template",
+  /** Excel 批量导入岗位（一次性提交，脚本/接口直调用） */
+  importJobs: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post<JobImportResult>("/jobs/import", fd);
+  },
+  /** 解析 Excel 并建立导入会话（只解析不入库，用于展示进度条与异常数据） */
+  importPrepare: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post<JobImportSession>("/jobs/import/prepare", fd);
+  },
+  /** 导入会话中的第 index 行（逐行推进进度条） */
+  importStep: (token: string, index: number) =>
+    api.post<JobImportStep>("/jobs/import/step", { token, index }),
+};
+
+/** 组织架构（需求部门层级）管理 */
+export const departmentApi = {
+  list: () => api.get<DepartmentNode[]>("/departments"),
+  stats: () => api.get<{ total: number }>("/departments/stats"),
+  /** 部门层级 Excel 导入模板下载地址 */
+  importTemplateUrl: "/api/departments/import/template",
+  /** Excel 批量导入部门层级 */
+  importExcel: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post<DepartmentImportResult>("/departments/import", fd);
+  },
+  /** 清空并恢复内置默认示例组织架构 */
+  reset: () => api.post("/departments/reset"),
+  /** 删除部门节点（存在下级时后端会拒绝） */
+  remove: (id: number) => api.delete(`/departments/${id}`),
+  /** 设置部门节点所在省份（空串 = 恢复为继承上级） */
+  setProvince: (id: number, province: string) =>
+    api.patch<{ ok: boolean; id: number; province: string }>(`/departments/${id}`, { province }),
 };
 
 export const matchApi = {
+  /** 手动重跑匹配引擎（覆盖 match_results）；日常无需调用，结果已在上传/建岗时预计算 */
   run: (jobId: number) =>
-    api.post<{ total_after_hard_filter: number; candidates: MatchRecord[] }>(`/match/run/${jobId}`),
-  list: (jobId: number) => api.get<MatchRecord[]>(`/match/${jobId}`),
+    api.post<{ total_after_hard_filter: number; candidates: MatchResult[] }>(`/match/run/${jobId}`),
+  /** 按岗位查询匹配结果（只读 match_results，不触发计算） */
+  list: (jobId: number) => api.get<MatchResult[]>(`/match/${jobId}`),
+  /** 按简历反向查询匹配结果 */
+  listByResume: (resumeId: number) => api.get<MatchResult[]>(`/match/resume/${resumeId}`),
   push: (matchIds: number[]) => api.post("/match/push", { match_ids: matchIds }),
   feedback: (matchId: number, result: "selected" | "rejected") =>
     api.post("/match/feedback", { match_id: matchId, result }),
-  exportUrl: (jobId: number) => `/api/match/${jobId}/export`,
+  exportUrl: (jobId: number, withFiles = true) =>
+    `/api/match/${jobId}/export?with_files=${withFiles}`,
 };

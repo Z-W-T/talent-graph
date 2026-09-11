@@ -2,11 +2,126 @@
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_ocr_engine = None  # PaddleOCR 懒加载
+_ocr_engine = None          # PaddleOCR 懒加载
+_ocr_init_error: str | None = None   # 初始化失败原因（避免每次上传都重试一遍慢失败）
+
+
+def _is_ascii(text: str) -> bool:
+    try:
+        text.encode("ascii")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _ascii_model_home() -> Path | None:
+    """挑一个纯 ASCII 且可写的目录作为 PaddleX 模型缓存根；找不到返回 None。
+
+    优先放后端包同级的 data/ 下（与 settings.upload_dir 同处），用 __file__ 定位而不是
+    相对路径 —— 否则从不同工作目录启动会指向不同位置，导致模型反复重新下载。
+    """
+    backend_root = Path(__file__).resolve().parents[2]      # .../backend
+    candidates = [
+        backend_root / "data" / "paddlex_models",
+        Path(os.environ.get("ProgramData", r"C:\ProgramData")) / "paddlex_models",
+    ]
+    for path in candidates:
+        if not _is_ascii(str(path)):
+            continue
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+        return path
+    return None
+
+
+def _migrate_models(src: Path, dst: Path) -> None:
+    """把已下载在旧目录（中文路径）的模型复制到 ASCII 目录，避开重复下载。"""
+    if not src.is_dir():
+        return
+    dst.mkdir(parents=True, exist_ok=True)
+    for child in src.iterdir():
+        target = dst / child.name
+        if target.exists():
+            continue
+        try:
+            if child.is_dir():
+                shutil.copytree(child, target)
+            else:
+                shutil.copy2(child, target)
+        except OSError as e:
+            logger.warning("迁移 OCR 模型 %s 失败: %s", child.name, e)
+
+
+def _prepare_paddlex_home() -> None:
+    """把 PaddleX 模型缓存目录切到纯 ASCII 路径（必须在 import paddleocr 之前调用）。
+
+    Paddle Inference 的 C++ 层用窄字符打开模型文件，路径含中文（如 Windows 用户名
+    「中科」→ C:\\Users\\中科\\.paddlex\\...）时读不到内容，会报
+    `json.exception.parse_error.101 ... attempting to parse an empty input`。
+    """
+    if os.environ.get("PADDLE_PDX_CACHE_HOME"):
+        return                                   # 已显式指定，尊重用户配置
+    default_home = Path.home() / ".paddlex"
+    if _is_ascii(str(default_home)):
+        return                                   # 家目录本就是 ASCII，无需处理
+    target = _ascii_model_home()
+    if target is None:
+        logger.warning("找不到可写的 ASCII 目录存放 OCR 模型，中文路径下 OCR 可能无法加载")
+        return
+    os.environ["PADDLE_PDX_CACHE_HOME"] = str(target)
+    logger.info("用户目录含非 ASCII 字符，OCR 模型缓存改至 %s", target)
+    _migrate_models(default_home / "official_models", target / "official_models")
+
+
+def _build_ocr_engine():
+    """构造 PaddleOCR 引擎（兼容 2.x / 3.x 的参数名）。
+
+    必须 enable_mkldnn=False：paddlepaddle 3.3.x 的 PIR 新执行器 + oneDNN 在
+    PP-OCRv6 检测模型上会抛
+    `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support`
+    （onednn_instruction.cc）。关掉 oneDNN 走普通 CPU 内核即正常识别，
+    代价是少量 CPU 推理速度（OCR 在后台任务里跑，可接受）。
+    """
+    from paddleocr import PaddleOCR
+
+    try:
+        # PaddleOCR 3.x：文本行方向参数名为 use_textline_orientation
+        return PaddleOCR(lang="ch", use_textline_orientation=True, enable_mkldnn=False)
+    except TypeError:
+        # 旧版 PaddleOCR 2.x：参数名为 use_angle_cls
+        return PaddleOCR(lang="ch", use_angle_cls=True, enable_mkldnn=False)
+
+
+def _run_ocr(engine, img) -> Any:
+    """PaddleOCR 3.x 用 predict()，2.x 用 ocr()。"""
+    if hasattr(engine, "predict"):
+        return engine.predict(img)
+    return engine.ocr(img, cls=True)
+
+
+def _collect_ocr_text(result) -> list[str]:
+    """兼容两种返回格式：3.x 为 dict（rec_texts），2.x 为 [[box, (text, score)], ...]。"""
+    lines: list[str] = []
+    for block in result or []:
+        texts = block.get("rec_texts") if hasattr(block, "get") else None
+        if texts:
+            lines.extend(str(t) for t in texts)
+            continue
+        for item in block or []:                 # 2.x 旧格式
+            try:
+                lines.append(str(item[1][0]))
+            except (TypeError, IndexError):
+                continue
+    return lines
 
 
 def _extract_pdf(path: Path) -> str:
@@ -43,7 +158,7 @@ def _extract_docx(path: Path) -> str:
 
 
 def _ocr_image_bytes(img_bytes: bytes) -> str:
-    global _ocr_engine
+    global _ocr_engine, _ocr_init_error
     try:
         import numpy as np
         from PIL import Image
@@ -53,24 +168,36 @@ def _ocr_image_bytes(img_bytes: bytes) -> str:
             "（numpy / Pillow / paddleocr）。请在 backend 环境执行："
             "pip install numpy Pillow paddlepaddle paddleocr 后重新解析。"
         ) from e
+
+    if _ocr_init_error:
+        raise ValueError(f"OCR 引擎不可用（初始化时失败）：{_ocr_init_error}")
+
     if _ocr_engine is None:
+        _prepare_paddlex_home()          # 必须早于 import paddleocr
         try:
-            from paddleocr import PaddleOCR
+            _ocr_engine = _build_ocr_engine()
         except ImportError as e:
             raise ValueError(
                 "该文件为扫描件/图片，需要 OCR 才能解析，但当前环境未安装 paddleocr。"
                 "请在 backend 环境执行：pip install paddlepaddle paddleocr 后重新解析。"
             ) from e
-        _ocr_engine = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+        except Exception as e:
+            logger.exception("OCR 引擎初始化失败")
+            _ocr_init_error = str(e)
+            raise ValueError(
+                f"OCR 引擎初始化失败：{e}。"
+                "常见原因：内网无法下载 OCR 模型，或模型缓存目录不可写（详见后端日志）。"
+            ) from e
+
     import io
 
     img = np.array(Image.open(io.BytesIO(img_bytes)).convert("RGB"))
-    result = _ocr_engine.ocr(img, cls=True)
-    lines: list[str] = []
-    for block in result or []:
-        for line in block or []:
-            lines.append(line[1][0])
-    return "\n".join(lines)
+    try:
+        result = _run_ocr(_ocr_engine, img)
+    except Exception as e:
+        logger.exception("OCR 文字识别失败")
+        raise ValueError(f"OCR 文字识别失败：{e}") from e
+    return "\n".join(_collect_ocr_text(result))
 
 
 def extract_text(path: str | Path) -> str:
